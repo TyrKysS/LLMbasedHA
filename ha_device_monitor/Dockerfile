@@ -1,7 +1,4 @@
-ARG BUILD_FROM
-FROM $BUILD_FROM
-
-RUN apk add --no-cache python3 py3-pip py3-aiohttp
+FROM python:3.12-alpine
 
 WORKDIR /app
 COPY app/requirements.txt .
