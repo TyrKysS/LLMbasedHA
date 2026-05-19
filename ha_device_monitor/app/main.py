@@ -23,6 +23,8 @@ HA_URL = "http://supervisor/core"
 WS_URL = "ws://supervisor/core/api/websocket"
 
 states_cache: dict[str, dict] = {}
+devices_cache: dict[str, dict] = {}
+entity_to_device: dict[str, str] = {}
 ws_clients: set[web.WebSocketResponse] = set()
 
 
@@ -84,6 +86,42 @@ async def fetch_all_states(session: aiohttp.ClientSession) -> list[dict]:
     async with session.get(f"{HA_URL}/api/states", headers=headers) as resp:
         resp.raise_for_status()
         return await resp.json()
+
+
+async def fetch_registries() -> None:
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.ws_connect(WS_URL) as ws:
+                msg = await ws.receive_json()
+                if msg.get("type") == "auth_required":
+                    await ws.send_json({"type": "auth", "access_token": HA_TOKEN})
+                    msg = await ws.receive_json()
+                    if msg.get("type") != "auth_ok":
+                        logger.error("fetch_registries: auth failed")
+                        return
+
+                await ws.send_json({"id": 1, "type": "config/entity_registry/list"})
+                msg = await ws.receive_json()
+                for entry in (msg.get("result") or []):
+                    eid = entry.get("entity_id")
+                    did = entry.get("device_id")
+                    if eid and did:
+                        entity_to_device[eid] = did
+
+                await ws.send_json({"id": 2, "type": "config/device_registry/list"})
+                msg = await ws.receive_json()
+                for dev in (msg.get("result") or []):
+                    did = dev.get("id")
+                    if did:
+                        devices_cache[did] = {
+                            "name": dev.get("name_by_user") or dev.get("name") or did,
+                            "manufacturer": dev.get("manufacturer") or "",
+                            "model": dev.get("model") or "",
+                        }
+
+        logger.info("Registries: %d devices, %d entity-device pairs", len(devices_cache), len(entity_to_device))
+    except Exception as exc:
+        logger.warning("fetch_registries failed: %s", exc)
 
 
 async def broadcast(message: dict) -> None:
@@ -150,7 +188,12 @@ async def listen_ha_events(app: web.Application) -> None:
                         classified = classify_entity(entity_id, new_state, attributes)
                         states_cache[entity_id] = classified
 
-                        await broadcast({"type": "state_changed", "entity_id": entity_id, "data": classified})
+                        await broadcast({
+                            "type": "state_changed",
+                            "entity_id": entity_id,
+                            "data": classified,
+                            "old_state": old_state,
+                        })
 
         except Exception as exc:
             logger.warning("WebSocket chyba: %s — opakuji za 10s", exc)
@@ -159,7 +202,21 @@ async def listen_ha_events(app: web.Application) -> None:
 
 @aiohttp_jinja2.template("dashboard.html")
 async def dashboard(request: web.Request) -> dict:
-    return {"states": states_cache}
+    devices_view: dict[str, dict] = {}
+
+    for entity_id, entity_data in states_cache.items():
+        did = entity_to_device.get(entity_id)
+        device_id = did if (did and did in devices_cache) else "__no_device__"
+
+        if device_id not in devices_view:
+            if device_id == "__no_device__":
+                devices_view[device_id] = {"name": "Ostatní", "manufacturer": "", "model": "", "entities": {}}
+            else:
+                devices_view[device_id] = {**devices_cache[device_id], "entities": {}}
+
+        devices_view[device_id]["entities"][entity_id] = entity_data
+
+    return {"devices": devices_view, "entity_to_device": entity_to_device}
 
 
 async def api_states(request: web.Request) -> web.Response:
@@ -180,6 +237,8 @@ async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
 
 
 async def on_startup(app: web.Application) -> None:
+    await fetch_registries()
+
     async with aiohttp.ClientSession() as session:
         try:
             raw_states = await fetch_all_states(session)

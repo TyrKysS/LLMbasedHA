@@ -100,77 +100,115 @@
 
     #grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
       gap: 12px;
     }
 
-    .card {
+    /* ── Device card ── */
+    .device-card {
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: 10px;
-      padding: 14px 16px;
-      transition: border-color 0.2s, transform 0.15s;
-      position: relative;
       overflow: hidden;
+      transition: border-color 0.2s;
     }
-    .card:hover { border-color: var(--accent); transform: translateY(-1px); }
-    .card.updated { animation: flash 0.6s ease; }
+    .device-card:hover { border-color: var(--accent); }
 
-    @keyframes flash {
-      0%   { border-color: var(--yellow); background: color-mix(in srgb, var(--surface) 80%, var(--yellow) 20%); }
-      100% { border-color: var(--border); background: var(--surface); }
-    }
-
-    .card-header {
-      display: flex;
-      align-items: flex-start;
-      gap: 10px;
-      margin-bottom: 8px;
-    }
-
-    .domain-badge {
-      font-size: 0.65rem;
-      font-weight: 600;
-      padding: 2px 7px;
-      border-radius: 4px;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      background: var(--surface2);
-      color: var(--text-muted);
-      white-space: nowrap;
-    }
-
-    .entity-name {
-      font-size: 0.9rem;
-      font-weight: 600;
-      line-height: 1.3;
-      flex: 1;
-    }
-
-    .entity-id {
-      font-size: 0.72rem;
-      color: var(--text-muted);
-      margin-bottom: 8px;
-      font-family: monospace;
-    }
-
-    .state-value {
-      font-size: 1.4rem;
-      font-weight: 700;
+    .device-header {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
       display: flex;
       align-items: center;
+      justify-content: space-between;
       gap: 8px;
     }
 
-    .unit { font-size: 0.9rem; font-weight: 400; color: var(--text-muted); }
+    .device-name {
+      font-size: 0.95rem;
+      font-weight: 600;
+      line-height: 1.3;
+    }
+
+    .device-meta {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    .device-entity-count {
+      background: var(--surface2);
+      color: var(--text-muted);
+      font-size: 0.72rem;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 10px;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    /* ── Entity rows ── */
+    .entity-list {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .entity-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 16px;
+      border-bottom: 1px solid var(--border);
+      transition: background 0.15s;
+      min-height: 38px;
+    }
+    .entity-row:last-child { border-bottom: none; }
+    .entity-row:hover { background: var(--surface2); }
+
+    @keyframes rowFlash {
+      0%   { background: color-mix(in srgb, var(--surface) 70%, var(--yellow) 30%); }
+      100% { background: transparent; }
+    }
+    .entity-row.updated { animation: rowFlash 0.7s ease; }
+
+    .domain-badge {
+      font-size: 0.62rem;
+      font-weight: 600;
+      padding: 2px 6px;
+      border-radius: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .entity-name-col {
+      flex: 1;
+      font-size: 0.85rem;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .entity-state-col {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      font-size: 0.85rem;
+      font-weight: 500;
+      flex-shrink: 0;
+      text-align: right;
+    }
+
+    .unit { font-size: 0.78rem; font-weight: 400; color: var(--text-muted); margin-left: 3px; }
 
     .pill {
       display: inline-flex;
       align-items: center;
       gap: 5px;
-      padding: 4px 10px;
+      padding: 3px 9px;
       border-radius: 20px;
-      font-size: 0.85rem;
+      font-size: 0.78rem;
       font-weight: 600;
     }
     .pill.on  { background: color-mix(in srgb, transparent 80%, var(--green)); color: var(--green); }
@@ -178,23 +216,9 @@
     .pill.active   { background: color-mix(in srgb, transparent 80%, var(--blue)); color: var(--blue); }
     .pill.inactive { background: color-mix(in srgb, transparent 80%, var(--text-muted)); color: var(--text-muted); }
 
-    .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
 
-    .sub-values {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      margin-top: 8px;
-    }
-    .sub-val {
-      font-size: 0.78rem;
-      color: var(--text-muted);
-      background: var(--surface2);
-      padding: 3px 8px;
-      border-radius: 5px;
-    }
-    .sub-val span { color: var(--text); font-weight: 600; }
-
+    /* ── Log panel ── */
     #log-panel {
       position: fixed;
       right: 0; top: 0; bottom: 0;
@@ -302,7 +326,7 @@
 <header>
   <div id="status-dot" title="WebSocket stav"></div>
   <h1>HA Device Monitor</h1>
-  <input id="search" type="text" placeholder="Hledat entitu..." autocomplete="off">
+  <input id="search" type="text" placeholder="Hledat zařízení nebo entitu..." autocomplete="off">
   <span id="entity-count"></span>
 </header>
 
@@ -331,14 +355,25 @@
 </button>
 
 <script>
-  const states = {{ states | tojson }};
-  let filtered = {};
+  const devicesData = {{ devices | tojson }};
+  const entityToDevice = {{ entity_to_device | tojson }};
+
+  // Flat states map extracted from devicesData
+  const states = {};
+  for (const device of Object.values(devicesData)) {
+    Object.assign(states, device.entities);
+  }
+  // Ensure __no_device__ entities are in entityToDevice
+  for (const eid of Object.keys((devicesData['__no_device__'] || {}).entities || {})) {
+    entityToDevice[eid] = '__no_device__';
+  }
+
   let activeDomain = 'all';
   let searchTerm = '';
   let logOpen = false;
   let unreadCount = 0;
 
-  // ── domain color map ──────────────────────────────────────────────────────
+  // ── Domain color map ──────────────────────────────────────────────────────
   const domainColors = {
     light: '#d29922', switch: '#58a6ff', sensor: '#3fb950',
     binary_sensor: '#a371f7', climate: '#f0883e', media_player: '#f85149',
@@ -346,77 +381,101 @@
     automation: '#b3d4f5', script: '#b3d4f5', fan: '#56d364',
     input_boolean: '#58a6ff',
   };
-
   function domainColor(d) { return domainColors[d] || '#8b949e'; }
 
-  // ── card rendering ────────────────────────────────────────────────────────
-  function renderStateContent(d) {
+  function safeId(entityId) { return entityId.replace(/\./g, '_'); }
+
+  // ── State rendering (compact row format) ──────────────────────────────────
+  function renderRowState(d) {
     const disp = d.display;
     switch (disp.type) {
       case 'toggle': {
         const cls = disp.value ? 'on' : 'off';
-        return `<div class="state-value"><span class="pill ${cls}"><span class="dot"></span>${disp.label}</span></div>`;
+        return `<span class="pill ${cls}"><span class="dot"></span>${disp.label}</span>`;
       }
       case 'binary': {
         const cls = disp.value ? 'active' : 'inactive';
-        return `<div class="state-value"><span class="pill ${cls}"><span class="dot"></span>${disp.label}</span></div>`;
+        return `<span class="pill ${cls}"><span class="dot"></span>${disp.label}</span>`;
       }
       case 'value': {
-        const val = disp.value === 'unavailable' || disp.value === 'unknown'
-          ? `<span style="color:var(--text-muted);font-size:1rem">${disp.value}</span>`
-          : `${disp.value}<span class="unit">${disp.unit}</span>`;
-        return `<div class="state-value">${val}</div>`;
+        if (disp.value === 'unavailable' || disp.value === 'unknown') {
+          return `<span style="color:var(--text-muted);font-size:0.78rem">${disp.value}</span>`;
+        }
+        return `<strong>${disp.value}</strong><span class="unit">${disp.unit}</span>`;
       }
-      case 'climate': {
-        const subs = [];
-        if (disp.current_temp != null) subs.push(`<div class="sub-val">Aktuálně <span>${disp.current_temp} °C</span></div>`);
-        if (disp.target_temp  != null) subs.push(`<div class="sub-val">Cíl <span>${disp.target_temp} °C</span></div>`);
-        if (disp.humidity     != null) subs.push(`<div class="sub-val">Vlhkost <span>${disp.humidity} %</span></div>`);
-        return `<div class="state-value" style="font-size:1rem">${disp.value}</div><div class="sub-values">${subs.join('')}</div>`;
-      }
-      case 'cover': {
-        const pos = disp.position != null ? `<div class="sub-val">Pozice <span>${disp.position} %</span></div>` : '';
-        return `<div class="state-value" style="font-size:1rem">${disp.value}</div><div class="sub-values">${pos}</div>`;
-      }
-      case 'weather': {
-        const subs = [];
-        if (disp.temperature != null) subs.push(`<div class="sub-val">Teplota <span>${disp.temperature} °C</span></div>`);
-        if (disp.humidity    != null) subs.push(`<div class="sub-val">Vlhkost <span>${disp.humidity} %</span></div>`);
-        return `<div class="state-value" style="font-size:1rem">${disp.value}</div><div class="sub-values">${subs.join('')}</div>`;
-      }
+      case 'climate':
+        return `${disp.value}${disp.current_temp != null ? `<span class="unit"> · ${disp.current_temp} °C</span>` : ''}`;
+      case 'cover':
+        return `${disp.value}${disp.position != null ? `<span class="unit"> (${disp.position} %)</span>` : ''}`;
+      case 'weather':
+        return `${disp.value}${disp.temperature != null ? `<span class="unit"> · ${disp.temperature} °C</span>` : ''}`;
+      case 'media':
+        return `<span style="color:var(--text-muted)">${disp.value}</span>`;
       default:
-        return `<div class="state-value" style="font-size:1rem;color:var(--text-muted)">${disp.value}</div>`;
+        return `<span style="color:var(--text-muted)">${disp.value}</span>`;
     }
   }
 
-  function createCard(entityId, d) {
-    const card = document.createElement('div');
-    card.className = 'card';
-    card.id = 'card-' + entityId.replace(/\./g, '_');
-    card.innerHTML = `
-      <div class="card-header">
-        <span class="domain-badge" style="background:color-mix(in srgb,var(--surface2) 60%,${domainColor(d.domain)} 40%);color:${domainColor(d.domain)}">${d.domain}</span>
-        <div class="entity-name">${d.friendly_name}</div>
-      </div>
-      <div class="entity-id">${entityId}</div>
-      ${renderStateContent(d)}
+  // ── Entity row ────────────────────────────────────────────────────────────
+  function createEntityRow(entityId, d) {
+    const row = document.createElement('div');
+    row.className = 'entity-row';
+    row.dataset.entityId = entityId;
+    row.dataset.domain = d.domain;
+    const color = domainColor(d.domain);
+    row.innerHTML = `
+      <span class="domain-badge" style="background:color-mix(in srgb,var(--surface2) 50%,${color} 20%);color:${color}">${d.domain}</span>
+      <span class="entity-name-col" title="${entityId}">${d.friendly_name}</span>
+      <div class="entity-state-col" id="state-${safeId(entityId)}">${renderRowState(d)}</div>
     `;
+    return row;
+  }
+
+  // ── Device card ───────────────────────────────────────────────────────────
+  function createDeviceCard(deviceId, device) {
+    const card = document.createElement('div');
+    card.className = 'device-card';
+    card.dataset.deviceId = deviceId;
+
+    const metaParts = [device.manufacturer, device.model].filter(Boolean);
+    const metaHtml = metaParts.length
+      ? `<div class="device-meta">${metaParts.join(' · ')}</div>`
+      : '';
+
+    const sortedEntities = Object.entries(device.entities)
+      .sort((a, b) => a[1].friendly_name.localeCompare(b[1].friendly_name, 'cs'));
+
+    card.innerHTML = `
+      <div class="device-header">
+        <div>
+          <div class="device-name">${device.name}</div>
+          ${metaHtml}
+        </div>
+        <span class="device-entity-count">${sortedEntities.length}</span>
+      </div>
+      <div class="entity-list"></div>
+    `;
+
+    const list = card.querySelector('.entity-list');
+    for (const [entityId, entityData] of sortedEntities) {
+      list.appendChild(createEntityRow(entityId, entityData));
+    }
+
     return card;
   }
 
-  // ── domain filter buttons ─────────────────────────────────────────────────
+  // ── Domain filter buttons ─────────────────────────────────────────────────
   function buildDomainFilters() {
     const domains = [...new Set(Object.values(states).map(d => d.domain))].sort();
     const bar = document.getElementById('domain-filter');
-    domains.forEach(domain => {
+    for (const domain of domains) {
       const btn = document.createElement('button');
       btn.className = 'filter-btn';
       btn.dataset.domain = domain;
       btn.textContent = domain;
-      btn.style.setProperty('--dc', domainColor(domain));
       btn.addEventListener('click', () => setDomainFilter(domain));
       bar.appendChild(btn);
-    });
+    }
   }
 
   function setDomainFilter(domain) {
@@ -424,54 +483,88 @@
     document.querySelectorAll('.filter-btn').forEach(b => {
       b.classList.toggle('active', b.dataset.domain === domain);
     });
-    renderGrid();
-  }
-
-  // ── grid rendering ────────────────────────────────────────────────────────
-  function applyFilters() {
-    filtered = {};
-    const q = searchTerm.toLowerCase();
-    for (const [id, d] of Object.entries(states)) {
-      if (activeDomain !== 'all' && d.domain !== activeDomain) continue;
-      if (q && !id.toLowerCase().includes(q) && !d.friendly_name.toLowerCase().includes(q)) continue;
-      filtered[id] = d;
-    }
-  }
-
-  function renderGrid() {
     applyFilters();
+  }
+
+  // ── Filtering ─────────────────────────────────────────────────────────────
+  function applyFilters() {
+    const q = searchTerm.toLowerCase();
+    let totalVisible = 0;
+
+    document.querySelectorAll('.device-card').forEach(card => {
+      const deviceId = card.dataset.deviceId;
+      const device = devicesData[deviceId];
+      if (!device) return;
+
+      const deviceNameMatches = q && device.name.toLowerCase().includes(q);
+      let visibleRows = 0;
+
+      card.querySelectorAll('.entity-row').forEach(row => {
+        const eid = row.dataset.entityId;
+        const domain = row.dataset.domain;
+        let show = true;
+
+        if (activeDomain !== 'all' && domain !== activeDomain) {
+          show = false;
+        } else if (q) {
+          if (!deviceNameMatches) {
+            const edata = states[eid];
+            const nameMatch = edata && edata.friendly_name.toLowerCase().includes(q);
+            const idMatch = eid.toLowerCase().includes(q);
+            if (!nameMatch && !idMatch) show = false;
+          }
+        }
+
+        row.style.display = show ? '' : 'none';
+        if (show) visibleRows++;
+      });
+
+      card.style.display = visibleRows > 0 ? '' : 'none';
+      card.querySelector('.device-entity-count').textContent = visibleRows;
+      totalVisible += visibleRows;
+    });
+
+    document.getElementById('entity-count').textContent = `${totalVisible} entit`;
+  }
+
+  // ── Grid render ───────────────────────────────────────────────────────────
+  function renderGrid() {
     const grid = document.getElementById('grid');
     grid.innerHTML = '';
-    const sorted = Object.entries(filtered).sort((a, b) => a[1].friendly_name.localeCompare(b[1].friendly_name, 'cs'));
-    sorted.forEach(([id, d]) => grid.appendChild(createCard(id, d)));
-    document.getElementById('entity-count').textContent = `${sorted.length} entit`;
-  }
 
-  // ── live update ───────────────────────────────────────────────────────────
-  function updateCard(entityId, d) {
-    states[entityId] = d;
-    const safeId = 'card-' + entityId.replace(/\./g, '_');
-    const existing = document.getElementById(safeId);
+    const sortedDevices = Object.entries(devicesData).sort(([aId, a], [bId, b]) => {
+      if (aId === '__no_device__') return 1;
+      if (bId === '__no_device__') return -1;
+      return a.name.localeCompare(b.name, 'cs');
+    });
+
+    for (const [deviceId, device] of sortedDevices) {
+      if (!device.entities || Object.keys(device.entities).length === 0) continue;
+      grid.appendChild(createDeviceCard(deviceId, device));
+    }
 
     applyFilters();
-    if (!filtered[entityId]) {
-      existing?.remove();
-      return;
-    }
+  }
 
-    if (existing) {
-      existing.querySelector('.entity-id').nextElementSibling?.replaceWith(
-        ...new DOMParser().parseFromString(renderStateContent(d), 'text/html').body.childNodes
-      );
-      existing.classList.remove('updated');
-      void existing.offsetWidth;
-      existing.classList.add('updated');
-    } else {
-      renderGrid();
+  // ── Live update ───────────────────────────────────────────────────────────
+  function updateEntityRow(entityId, data, flash = true) {
+    states[entityId] = data;
+    const stateEl = document.getElementById(`state-${safeId(entityId)}`);
+    if (!stateEl) return;
+
+    stateEl.innerHTML = renderRowState(data);
+
+    if (flash) {
+      const row = stateEl.closest('.entity-row');
+      if (row) {
+        row.classList.remove('updated');
+        void row.offsetWidth;
+        row.classList.add('updated');
+      }
     }
   }
 
-  // ── log panel ─────────────────────────────────────────────────────────────
+  // ── Log panel ─────────────────────────────────────────────────────────────
   function addLogEntry(msg) {
     const entries = document.getElementById('log-entries');
     const ts = new Date(msg.timestamp || Date.now()).toLocaleTimeString('cs-CZ');
@@ -521,27 +614,28 @@
     ws.onmessage = (ev) => {
       const msg = JSON.parse(ev.data);
       if (msg.type === 'init') {
-        Object.assign(states, msg.states);
-        renderGrid();
+        for (const [eid, data] of Object.entries(msg.states)) {
+          updateEntityRow(eid, data, false);
+        }
       } else if (msg.type === 'state_changed') {
-        updateCard(msg.entity_id, msg.data);
+        updateEntityRow(msg.entity_id, msg.data);
         addLogEntry({
           entity_id: msg.entity_id,
           friendly_name: msg.data.friendly_name,
-          old_state: msg.data.display?.prev_state ?? '–',
-          new_state: msg.data.display?.value ?? msg.data.state_raw,
+          old_state: msg.old_state,
+          new_state: msg.data.state_raw,
         });
       }
     };
   }
 
-  // ── init ──────────────────────────────────────────────────────────────────
+  // ── Init ──────────────────────────────────────────────────────────────────
   buildDomainFilters();
   renderGrid();
 
   document.getElementById('search').addEventListener('input', e => {
     searchTerm = e.target.value;
-    renderGrid();
+    applyFilters();
   });
 
   document.getElementById('log-toggle').addEventListener('click', toggleLog);
