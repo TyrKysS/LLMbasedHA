@@ -12,7 +12,8 @@ arch:
   - i386
 
 homeassistant_api: true
-supervisor_api: true
+hassio_api: true
+hassio_role: default
 auth_api: true
 
 ingress: true
@@ -22,6 +23,3 @@ panel_title: "Device Monitor"
 
 map:
   - config:rw
-
-options: {}
-schema: {}
