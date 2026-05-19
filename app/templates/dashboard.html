@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HA Device Monitor</title>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --surface2: #21262d;
+      --border: #30363d;
+      --text: #e6edf3;
+      --text-muted: #8b949e;
+      --green: #3fb950;
+      --red: #f85149;
+      --blue: #58a6ff;
+      --yellow: #d29922;
+      --purple: #a371f7;
+      --orange: #f0883e;
+      --accent: #1f6feb;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      min-height: 100vh;
+    }
+
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 16px 24px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    header h1 { font-size: 1.2rem; font-weight: 600; }
+
+    #status-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      background: var(--red);
+      transition: background 0.3s;
+    }
+    #status-dot.connected { background: var(--green); }
+
+    #entity-count {
+      margin-left: auto;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+    }
+
+    #search {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      padding: 6px 12px;
+      font-size: 0.9rem;
+      width: 220px;
+      outline: none;
+    }
+    #search:focus { border-color: var(--accent); }
+
+    #domain-filter {
+      display: flex;
+      gap: 6px;
+      padding: 12px 24px;
+      flex-wrap: wrap;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+
+    .filter-btn {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      color: var(--text-muted);
+      padding: 4px 12px;
+      font-size: 0.8rem;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .filter-btn:hover { border-color: var(--blue); color: var(--text); }
+    .filter-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+    main {
+      padding: 20px 24px;
+      max-width: 1600px;
+      margin: 0 auto;
+    }
+
+    #grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 12px;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 16px;
+      transition: border-color 0.2s, transform 0.15s;
+      position: relative;
+      overflow: hidden;
+    }
+    .card:hover { border-color: var(--accent); transform: translateY(-1px); }
+    .card.updated { animation: flash 0.6s ease; }
+
+    @keyframes flash {
+      0%   { border-color: var(--yellow); background: color-mix(in srgb, var(--surface) 80%, var(--yellow) 20%); }
+      100% { border-color: var(--border); background: var(--surface); }
+    }
+
+    .card-header {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+
+    .domain-badge {
+      font-size: 0.65rem;
+      font-weight: 600;
+      padding: 2px 7px;
+      border-radius: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      background: var(--surface2);
+      color: var(--text-muted);
+      white-space: nowrap;
+    }
+
+    .entity-name {
+      font-size: 0.9rem;
+      font-weight: 600;
+      line-height: 1.3;
+      flex: 1;
+    }
+
+    .entity-id {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+      font-family: monospace;
+    }
+
+    .state-value {
+      font-size: 1.4rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .unit { font-size: 0.9rem; font-weight: 400; color: var(--text-muted); }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 0.85rem;
+      font-weight: 600;
+    }
+    .pill.on  { background: color-mix(in srgb, transparent 80%, var(--green)); color: var(--green); }
+    .pill.off { background: color-mix(in srgb, transparent 80%, var(--text-muted)); color: var(--text-muted); }
+    .pill.active   { background: color-mix(in srgb, transparent 80%, var(--blue)); color: var(--blue); }
+    .pill.inactive { background: color-mix(in srgb, transparent 80%, var(--text-muted)); color: var(--text-muted); }
+
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+
+    .sub-values {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .sub-val {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      background: var(--surface2);
+      padding: 3px 8px;
+      border-radius: 5px;
+    }
+    .sub-val span { color: var(--text); font-weight: 600; }
+
+    #log-panel {
+      position: fixed;
+      right: 0; top: 0; bottom: 0;
+      width: 420px;
+      background: var(--surface);
+      border-left: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      transform: translateX(100%);
+      transition: transform 0.25s ease;
+      z-index: 200;
+    }
+    #log-panel.open { transform: translateX(0); }
+
+    .log-header {
+      padding: 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .log-header h2 { font-size: 1rem; flex: 1; }
+
+    #log-entries {
+      flex: 1;
+      overflow-y: auto;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .log-entry {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 10px;
+      font-size: 0.78rem;
+      font-family: monospace;
+      animation: slideIn 0.2s ease;
+    }
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateX(10px); }
+      to   { opacity: 1; transform: translateX(0); }
+    }
+
+    .log-ts { color: var(--text-muted); display: block; margin-bottom: 3px; }
+    .log-entity { color: var(--blue); font-weight: bold; }
+    .log-arrow { color: var(--text-muted); }
+    .log-old { color: var(--red); }
+    .log-new { color: var(--green); }
+
+    #log-toggle {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 50%;
+      width: 52px;
+      height: 52px;
+      font-size: 1.4rem;
+      cursor: pointer;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+      z-index: 300;
+      transition: background 0.2s;
+    }
+    #log-toggle:hover { background: #388bfd; }
+
+    #log-badge {
+      position: absolute;
+      top: -4px; right: -4px;
+      background: var(--red);
+      color: #fff;
+      border-radius: 10px;
+      font-size: 0.65rem;
+      padding: 1px 5px;
+      font-weight: bold;
+      display: none;
+    }
+
+    .btn-icon {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 1rem;
+      padding: 4px;
+    }
+    .btn-icon:hover { color: var(--text); }
+
+    #overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.5);
+      z-index: 190;
+      display: none;
+    }
+    #overlay.show { display: block; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div id="status-dot" title="WebSocket stav"></div>
+  <h1>HA Device Monitor</h1>
+  <input id="search" type="text" placeholder="Hledat entitu..." autocomplete="off">
+  <span id="entity-count"></span>
+</header>
+
+<div id="domain-filter">
+  <button class="filter-btn active" data-domain="all">Vše</button>
+</div>
+
+<main>
+  <div id="grid"></div>
+</main>
+
+<div id="overlay"></div>
+
+<div id="log-panel">
+  <div class="log-header">
+    <h2>Změny stavů</h2>
+    <button class="btn-icon" id="clear-log" title="Vymazat log">🗑</button>
+    <button class="btn-icon" id="close-log" title="Zavřít">✕</button>
+  </div>
+  <div id="log-entries"></div>
+</div>
+
+<button id="log-toggle" title="Zobrazit log změn">
+  📋
+  <span id="log-badge"></span>
+</button>
+
+<script>
+  const states = {{ states | tojson }};
+  let filtered = {};
+  let activeDomain = 'all';
+  let searchTerm = '';
+  let logOpen = false;
+  let unreadCount = 0;
+
+  // ── domain color map ──────────────────────────────────────────────────────
+  const domainColors = {
+    light: '#d29922', switch: '#58a6ff', sensor: '#3fb950',
+    binary_sensor: '#a371f7', climate: '#f0883e', media_player: '#f85149',
+    cover: '#79c0ff', person: '#ffa657', weather: '#8b949e',
+    automation: '#b3d4f5', script: '#b3d4f5', fan: '#56d364',
+    input_boolean: '#58a6ff',
+  };
+
+  function domainColor(d) { return domainColors[d] || '#8b949e'; }
+
+  // ── card rendering ────────────────────────────────────────────────────────
+  function renderStateContent(d) {
+    const disp = d.display;
+    switch (disp.type) {
+      case 'toggle': {
+        const cls = disp.value ? 'on' : 'off';
+        return `<div class="state-value"><span class="pill ${cls}"><span class="dot"></span>${disp.label}</span></div>`;
+      }
+      case 'binary': {
+        const cls = disp.value ? 'active' : 'inactive';
+        return `<div class="state-value"><span class="pill ${cls}"><span class="dot"></span>${disp.label}</span></div>`;
+      }
+      case 'value': {
+        const val = disp.value === 'unavailable' || disp.value === 'unknown'
+          ? `<span style="color:var(--text-muted);font-size:1rem">${disp.value}</span>`
+          : `${disp.value}<span class="unit">${disp.unit}</span>`;
+        return `<div class="state-value">${val}</div>`;
+      }
+      case 'climate': {
+        const subs = [];
+        if (disp.current_temp != null) subs.push(`<div class="sub-val">Aktuálně <span>${disp.current_temp} °C</span></div>`);
+        if (disp.target_temp  != null) subs.push(`<div class="sub-val">Cíl <span>${disp.target_temp} °C</span></div>`);
+        if (disp.humidity     != null) subs.push(`<div class="sub-val">Vlhkost <span>${disp.humidity} %</span></div>`);
+        return `<div class="state-value" style="font-size:1rem">${disp.value}</div><div class="sub-values">${subs.join('')}</div>`;
+      }
+      case 'cover': {
+        const pos = disp.position != null ? `<div class="sub-val">Pozice <span>${disp.position} %</span></div>` : '';
+        return `<div class="state-value" style="font-size:1rem">${disp.value}</div><div class="sub-values">${pos}</div>`;
+      }
+      case 'weather': {
+        const subs = [];
+        if (disp.temperature != null) subs.push(`<div class="sub-val">Teplota <span>${disp.temperature} °C</span></div>`);
+        if (disp.humidity    != null) subs.push(`<div class="sub-val">Vlhkost <span>${disp.humidity} %</span></div>`);
+        return `<div class="state-value" style="font-size:1rem">${disp.value}</div><div class="sub-values">${subs.join('')}</div>`;
+      }
+      default:
+        return `<div class="state-value" style="font-size:1rem;color:var(--text-muted)">${disp.value}</div>`;
+    }
+  }
+
+  function createCard(entityId, d) {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.id = 'card-' + entityId.replace(/\./g, '_');
+    card.innerHTML = `
+      <div class="card-header">
+        <span class="domain-badge" style="background:color-mix(in srgb,var(--surface2) 60%,${domainColor(d.domain)} 40%);color:${domainColor(d.domain)}">${d.domain}</span>
+        <div class="entity-name">${d.friendly_name}</div>
+      </div>
+      <div class="entity-id">${entityId}</div>
+      ${renderStateContent(d)}
+    `;
+    return card;
+  }
+
+  // ── domain filter buttons ─────────────────────────────────────────────────
+  function buildDomainFilters() {
+    const domains = [...new Set(Object.values(states).map(d => d.domain))].sort();
+    const bar = document.getElementById('domain-filter');
+    domains.forEach(domain => {
+      const btn = document.createElement('button');
+      btn.className = 'filter-btn';
+      btn.dataset.domain = domain;
+      btn.textContent = domain;
+      btn.style.setProperty('--dc', domainColor(domain));
+      btn.addEventListener('click', () => setDomainFilter(domain));
+      bar.appendChild(btn);
+    });
+  }
+
+  function setDomainFilter(domain) {
+    activeDomain = domain;
+    document.querySelectorAll('.filter-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset.domain === domain);
+    });
+    renderGrid();
+  }
+
+  // ── grid rendering ────────────────────────────────────────────────────────
+  function applyFilters() {
+    filtered = {};
+    const q = searchTerm.toLowerCase();
+    for (const [id, d] of Object.entries(states)) {
+      if (activeDomain !== 'all' && d.domain !== activeDomain) continue;
+      if (q && !id.toLowerCase().includes(q) && !d.friendly_name.toLowerCase().includes(q)) continue;
+      filtered[id] = d;
+    }
+  }
+
+  function renderGrid() {
+    applyFilters();
+    const grid = document.getElementById('grid');
+    grid.innerHTML = '';
+    const sorted = Object.entries(filtered).sort((a, b) => a[1].friendly_name.localeCompare(b[1].friendly_name, 'cs'));
+    sorted.forEach(([id, d]) => grid.appendChild(createCard(id, d)));
+    document.getElementById('entity-count').textContent = `${sorted.length} entit`;
+  }
+
+  // ── live update ───────────────────────────────────────────────────────────
+  function updateCard(entityId, d) {
+    states[entityId] = d;
+    const safeId = 'card-' + entityId.replace(/\./g, '_');
+    const existing = document.getElementById(safeId);
+
+    applyFilters();
+    if (!filtered[entityId]) {
+      existing?.remove();
+      return;
+    }
+
+    if (existing) {
+      existing.querySelector('.entity-id').nextElementSibling?.replaceWith(
+        ...new DOMParser().parseFromString(renderStateContent(d), 'text/html').body.childNodes
+      );
+      existing.classList.remove('updated');
+      void existing.offsetWidth;
+      existing.classList.add('updated');
+    } else {
+      renderGrid();
+    }
+  }
+
+  // ── log panel ─────────────────────────────────────────────────────────────
+  function addLogEntry(msg) {
+    const entries = document.getElementById('log-entries');
+    const ts = new Date(msg.timestamp || Date.now()).toLocaleTimeString('cs-CZ');
+    const el = document.createElement('div');
+    el.className = 'log-entry';
+    el.innerHTML = `
+      <span class="log-ts">${ts}</span>
+      <span class="log-entity">${msg.entity_id}</span><br>
+      <span style="color:var(--text-muted)">${msg.friendly_name || ''}</span><br>
+      <span class="log-old">${msg.old_state}</span>
+      <span class="log-arrow"> → </span>
+      <span class="log-new">${msg.new_state}</span>
+    `;
+    entries.prepend(el);
+    if (entries.children.length > 200) entries.lastElementChild?.remove();
+
+    if (!logOpen) {
+      unreadCount++;
+      const badge = document.getElementById('log-badge');
+      badge.textContent = unreadCount > 99 ? '99+' : unreadCount;
+      badge.style.display = 'block';
+    }
+  }
+
+  function toggleLog() {
+    logOpen = !logOpen;
+    document.getElementById('log-panel').classList.toggle('open', logOpen);
+    document.getElementById('overlay').classList.toggle('show', logOpen);
+    if (logOpen) {
+      unreadCount = 0;
+      document.getElementById('log-badge').style.display = 'none';
+    }
+  }
+
+  // ── WebSocket ─────────────────────────────────────────────────────────────
+  function connectWS() {
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    const ws = new WebSocket(`${proto}://${location.host}/ws`);
+    const dot = document.getElementById('status-dot');
+
+    ws.onopen = () => dot.classList.add('connected');
+    ws.onclose = () => {
+      dot.classList.remove('connected');
+      setTimeout(connectWS, 3000);
+    };
+
+    ws.onmessage = (ev) => {
+      const msg = JSON.parse(ev.data);
+      if (msg.type === 'init') {
+        Object.assign(states, msg.states);
+        renderGrid();
+      } else if (msg.type === 'state_changed') {
+        updateCard(msg.entity_id, msg.data);
+        addLogEntry({
+          entity_id: msg.entity_id,
+          friendly_name: msg.data.friendly_name,
+          old_state: msg.data.display?.prev_state ?? '–',
+          new_state: msg.data.display?.value ?? msg.data.state_raw,
+        });
+      }
+    };
+  }
+
+  // ── init ──────────────────────────────────────────────────────────────────
+  buildDomainFilters();
+  renderGrid();
+
+  document.getElementById('search').addEventListener('input', e => {
+    searchTerm = e.target.value;
+    renderGrid();
+  });
+
+  document.getElementById('log-toggle').addEventListener('click', toggleLog);
+  document.getElementById('close-log').addEventListener('click', toggleLog);
+  document.getElementById('overlay').addEventListener('click', toggleLog);
+  document.getElementById('clear-log').addEventListener('click', () => {
+    document.getElementById('log-entries').innerHTML = '';
+  });
+
+  connectWS();
+</script>
+</body>
+</html>
