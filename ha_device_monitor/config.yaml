@@ -1,6 +1,12 @@
 name: "HA Device Monitor"
-description: "Dashboard zobrazující stav všech zařízení a logování změn entit."
-version: "1.2.2"
+description: >-
+  Real-time dashboard zobrazující stav všech entit a zařízení v Home Assistant.
+  Obsahuje živý přehled změn, filtrování podle domény, fulltextové vyhledávání
+  a skupinování entit podle zařízení. Integruje LLM sieve — systém dynamického
+  vážení entit kombinující statické doménové váhy (W), kritické třídy zařízení
+  a dynamickou amplitudu změn (M_delta) pro prioritizaci entit předávaných
+  LLM agentovi. Každá entita má skóre aktivity s 5minutovým oknem.
+version: "1.2.3"
 slug: "ha_device_monitor"
 init: false
 
