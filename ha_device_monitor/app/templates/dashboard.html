@@ -67,10 +67,138 @@
       border: 1px solid var(--border);
       margin-left: auto;
       user-select: none;
-      transition: border-color 0.4s;
+      cursor: pointer;
+      transition: border-color 0.4s, background 0.15s;
     }
+    #weight-indicator:hover { background: color-mix(in srgb, var(--surface2) 70%, var(--accent) 30%); }
     #weight-indicator.w-critical { border-color: var(--red); }
     #weight-indicator.w-presence { border-color: var(--yellow); }
+    #weight-chevron {
+      font-size: 0.6rem;
+      color: var(--text-muted);
+      margin-left: 2px;
+      transition: transform 0.25s;
+    }
+    #weight-indicator.panel-open #weight-chevron { transform: rotate(180deg); }
+
+    /* ── Weight breakdown panel ── */
+    #weight-panel {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      max-height: 0;
+      overflow: hidden;
+      transition: max-height 0.3s ease;
+    }
+    #weight-panel.open { max-height: 700px; }
+
+    .weight-panel-inner {
+      padding: 16px 24px;
+      max-width: 1600px;
+      margin: 0 auto;
+    }
+
+    .weight-panel-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 24px;
+    }
+
+    .weight-tier-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding-bottom: 10px;
+      margin-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .weight-tier-title {
+      font-size: 0.78rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .weight-tier-title.w-critical { color: var(--red); }
+    .weight-tier-title.w-presence { color: var(--yellow); }
+    .weight-tier-title.w-env      { color: var(--green); }
+
+    .weight-tier-badge {
+      font-size: 0.68rem;
+      color: var(--text-muted);
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 1px 6px;
+    }
+
+    .weight-tier-subtotal {
+      margin-left: auto;
+      font-size: 0.88rem;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+    .weight-tier-subtotal.w-critical { color: var(--red); }
+    .weight-tier-subtotal.w-presence { color: var(--yellow); }
+    .weight-tier-subtotal.w-env      { color: var(--green); }
+
+    .weight-tier-list {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      max-height: 240px;
+      overflow-y: auto;
+    }
+
+    .weight-entity-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.82rem;
+      padding: 3px 0;
+      min-height: 24px;
+      transition: opacity 0.3s;
+    }
+    .weight-entity-item.inactive { opacity: 0.3; }
+
+    .weight-entity-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .weight-empty {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      font-style: italic;
+      padding: 4px 0;
+    }
+
+    .weight-more {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      padding: 3px 0;
+      margin-top: 2px;
+    }
+
+    .weight-env-bar {
+      height: 6px;
+      background: var(--surface2);
+      border-radius: 3px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      margin-bottom: 8px;
+    }
+    .weight-env-fill {
+      height: 100%;
+      background: var(--green);
+      border-radius: 3px;
+      transition: width 0.5s ease;
+    }
+    .weight-env-counts {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+    .weight-env-counts strong { color: var(--green); }
 
     .weight-label {
       color: var(--text-muted);
@@ -385,11 +513,49 @@
   <h1>HA Device Monitor</h1>
   <input id="search" type="text" placeholder="Hledat zařízení nebo entitu..." autocomplete="off">
   <span id="entity-count"></span>
-  <div id="weight-indicator" title="Celková váha aktivity W&#10;Kritické senzory: 100 · Přítomnost/interakce: 10 · Prostředí: 1">
+  <div id="weight-indicator" title="Klikni pro detail vah">
     <span class="weight-label">W</span>
     <span id="total-weight" class="w-env">0</span>
+    <span id="weight-chevron">▼</span>
   </div>
 </header>
+
+<div id="weight-panel">
+  <div class="weight-panel-inner">
+    <div class="weight-panel-grid">
+      <div class="weight-tier">
+        <div class="weight-tier-header">
+          <span class="weight-tier-title w-critical">Kritické</span>
+          <span class="weight-tier-badge">W = 100</span>
+          <span class="weight-tier-subtotal w-critical" id="critical-subtotal">∑ 0</span>
+        </div>
+        <div class="weight-tier-list" id="critical-list">
+          <span class="weight-empty">Načítání…</span>
+        </div>
+      </div>
+      <div class="weight-tier">
+        <div class="weight-tier-header">
+          <span class="weight-tier-title w-presence">Přítomnost &amp; interakce</span>
+          <span class="weight-tier-badge">W = 10</span>
+          <span class="weight-tier-subtotal w-presence" id="presence-subtotal">∑ 0</span>
+        </div>
+        <div class="weight-tier-list" id="presence-list">
+          <span class="weight-empty">Načítání…</span>
+        </div>
+      </div>
+      <div class="weight-tier">
+        <div class="weight-tier-header">
+          <span class="weight-tier-title w-env">Prostředí</span>
+          <span class="weight-tier-badge">W = 1</span>
+          <span class="weight-tier-subtotal w-env" id="env-subtotal">∑ 0</span>
+        </div>
+        <div class="weight-tier-list" id="env-list">
+          <span class="weight-empty">Načítání…</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
 
 <div id="domain-filter">
   <button class="filter-btn active" data-domain="all">Vše</button>
@@ -434,6 +600,7 @@
   let logOpen = false;
   let unreadCount = 0;
   let currentTotalWeight = 0;
+  let weightPanelOpen = false;
 
   // ── Weight helpers ────────────────────────────────────────────────────────
   function weightClass(w) {
@@ -458,13 +625,90 @@
     const changed = weight !== currentTotalWeight;
     currentTotalWeight = weight;
     el.textContent = weight;
-    const cls = weightClass(weight);
-    el.className = cls;
-    ind.className = weight >= 100 ? 'w-critical' : weight >= 10 ? 'w-presence' : '';
+    el.className = weightClass(weight);
+    const indCls = weight >= 100 ? 'w-critical' : weight >= 10 ? 'w-presence' : '';
+    ind.className = [indCls, weightPanelOpen ? 'panel-open' : ''].filter(Boolean).join(' ');
     if (changed) {
       el.classList.add('pulse');
       el.addEventListener('animationend', () => el.classList.remove('pulse'), { once: true });
     }
+    renderWeightPanel();
+  }
+
+  function toggleWeightPanel() {
+    weightPanelOpen = !weightPanelOpen;
+    const panel = document.getElementById('weight-panel');
+    const ind = document.getElementById('weight-indicator');
+    panel.classList.toggle('open', weightPanelOpen);
+    ind.classList.toggle('panel-open', weightPanelOpen);
+    if (weightPanelOpen) renderWeightPanel();
+  }
+
+  function renderWeightPanel() {
+    if (!weightPanelOpen) return;
+
+    const critical = [], presence = [];
+    let envActive = 0, envTotal = 0;
+
+    for (const [, d] of Object.entries(states)) {
+      const active = isEntityActive(d.domain, d.state_raw);
+      const w = d.weight || 1;
+      if (w >= 100) {
+        critical.push({ name: d.friendly_name, active });
+      } else if (w >= 10) {
+        if (active) presence.push(d.friendly_name);
+      } else {
+        envTotal++;
+        if (active) envActive++;
+      }
+    }
+
+    critical.sort((a, b) => b.active - a.active || a.name.localeCompare(b.name, 'cs'));
+    presence.sort((a, b) => a.localeCompare(b, 'cs'));
+
+    const critSubtotal = critical.filter(e => e.active).length * 100;
+    const presSubtotal = presence.length * 10;
+
+    document.getElementById('critical-subtotal').textContent = `∑ ${critSubtotal}`;
+    document.getElementById('presence-subtotal').textContent = `∑ ${presSubtotal}`;
+    document.getElementById('env-subtotal').textContent = `∑ ${envActive}`;
+
+    // Critical: show all, active highlighted, inactive dimmed
+    const critList = document.getElementById('critical-list');
+    if (critical.length === 0) {
+      critList.innerHTML = '<span class="weight-empty">Žádný kritický senzor</span>';
+    } else {
+      critList.innerHTML = critical.map(e => `
+        <div class="weight-entity-item${e.active ? '' : ' inactive'}">
+          <span class="weight-entity-dot" style="background:${e.active ? 'var(--red)' : 'var(--border)'}"></span>
+          <span>${e.name}</span>
+        </div>`).join('');
+    }
+
+    // Presence: only active, max 12 with overflow
+    const presList = document.getElementById('presence-list');
+    if (presence.length === 0) {
+      presList.innerHTML = '<span class="weight-empty">Žádný aktivní</span>';
+    } else {
+      const MAX = 12;
+      const shown = presence.slice(0, MAX);
+      const more = presence.length - MAX;
+      presList.innerHTML = shown.map(name => `
+        <div class="weight-entity-item">
+          <span class="weight-entity-dot" style="background:var(--yellow)"></span>
+          <span>${name}</span>
+        </div>`).join('') +
+        (more > 0 ? `<div class="weight-more">+ ${more} dalších aktivních</div>` : '');
+    }
+
+    // Environmental: progress bar + count
+    const pct = envTotal > 0 ? Math.round(envActive / envTotal * 100) : 0;
+    document.getElementById('env-list').innerHTML = `
+      <div class="weight-env-bar"><div class="weight-env-fill" style="width:${pct}%"></div></div>
+      <div class="weight-env-counts">
+        <strong>${envActive}</strong> aktivních z <span>${envTotal}</span> celkem
+        <span style="color:var(--text-muted);font-size:0.75rem"> (${pct} %)</span>
+      </div>`;
   }
 
   // ── Domain color map ──────────────────────────────────────────────────────
@@ -750,6 +994,8 @@
     searchTerm = e.target.value;
     applyFilters();
   });
+
+  document.getElementById('weight-indicator').addEventListener('click', toggleWeightPanel);
 
   document.getElementById('log-toggle').addEventListener('click', toggleLog);
   document.getElementById('close-log').addEventListener('click', toggleLog);
