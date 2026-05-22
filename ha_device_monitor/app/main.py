@@ -27,6 +27,57 @@ devices_cache: dict[str, dict] = {}
 entity_to_device: dict[str, str] = {}
 ws_clients: set[web.WebSocketResponse] = set()
 
+# ── Domain weight system ──────────────────────────────────────────────────────
+CRITICAL_DEVICE_CLASSES = frozenset({
+    "smoke", "moisture", "gas", "co", "carbon_monoxide", "fire", "flood",
+    "heat", "cold", "safety", "problem", "tamper",
+})
+PRESENCE_DOMAINS = frozenset({
+    "switch", "light", "input_boolean", "fan", "cover", "media_player",
+    "button", "remote", "alarm_control_panel", "person", "lock",
+})
+
+total_weight: int = 0
+
+
+def get_entity_weight(entity_id: str, attributes: dict) -> int:
+    domain = entity_id.split(".")[0]
+    if domain == "binary_sensor":
+        return 100 if attributes.get("device_class", "") in CRITICAL_DEVICE_CLASSES else 10
+    if domain in PRESENCE_DOMAINS:
+        return 10
+    return 1
+
+
+def is_entity_active(domain: str, state: str) -> bool:
+    if state in ("unavailable", "unknown"):
+        return False
+    if domain in ("binary_sensor", "switch", "light", "input_boolean", "fan", "automation", "script"):
+        return state == "on"
+    if domain == "cover":
+        return state in ("open", "opening", "closing")
+    if domain == "media_player":
+        return state not in ("off", "idle", "standby")
+    if domain in ("alarm_control_panel",):
+        return state != "disarmed"
+    if domain == "lock":
+        return state == "unlocked"
+    if domain == "sensor":
+        try:
+            float(state)
+            return True
+        except (ValueError, TypeError):
+            return False
+    return state not in ("off", "closed", "idle", "disarmed")
+
+
+def calculate_total_weight() -> int:
+    return sum(
+        data["weight"]
+        for data in states_cache.values()
+        if is_entity_active(data["domain"], data["state_raw"])
+    )
+
 
 def classify_entity(entity_id: str, state: str, attributes: dict) -> dict:
     domain = entity_id.split(".")[0]
@@ -78,6 +129,7 @@ def classify_entity(entity_id: str, state: str, attributes: dict) -> dict:
 
     result["friendly_name"] = attributes.get("friendly_name", entity_id)
     result["icon"] = attributes.get("icon", "")
+    result["weight"] = get_entity_weight(entity_id, attributes)
     return result
 
 
@@ -188,11 +240,15 @@ async def listen_ha_events(app: web.Application) -> None:
                         classified = classify_entity(entity_id, new_state, attributes)
                         states_cache[entity_id] = classified
 
+                        global total_weight
+                        total_weight = calculate_total_weight()
+
                         await broadcast({
                             "type": "state_changed",
                             "entity_id": entity_id,
                             "data": classified,
                             "old_state": old_state,
+                            "total_weight": total_weight,
                         })
 
         except Exception as exc:
@@ -228,7 +284,7 @@ async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
     await ws.prepare(request)
     ws_clients.add(ws)
     try:
-        await ws.send_json({"type": "init", "states": states_cache})
+        await ws.send_json({"type": "init", "states": states_cache, "total_weight": total_weight})
         async for _ in ws:
             pass
     finally:
@@ -247,7 +303,9 @@ async def on_startup(app: web.Application) -> None:
                 state = entity["state"]
                 attrs = entity.get("attributes", {})
                 states_cache[eid] = classify_entity(eid, state, attrs)
-            logger.info("Načteno %d entit z Home Assistant", len(states_cache))
+            global total_weight
+            total_weight = calculate_total_weight()
+            logger.info("Načteno %d entit z Home Assistant, počáteční váha aktivity: %d", len(states_cache), total_weight)
         except Exception as exc:
             logger.error("Chyba při načítání stavů: %s", exc)
 

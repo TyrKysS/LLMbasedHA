@@ -53,10 +53,67 @@
     #status-dot.connected { background: var(--green); }
 
     #entity-count {
-      margin-left: auto;
       color: var(--text-muted);
       font-size: 0.85rem;
     }
+
+    #weight-indicator {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 14px;
+      border-radius: 20px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      margin-left: auto;
+      user-select: none;
+      transition: border-color 0.4s;
+    }
+    #weight-indicator.w-critical { border-color: var(--red); }
+    #weight-indicator.w-presence { border-color: var(--yellow); }
+
+    .weight-label {
+      color: var(--text-muted);
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    #total-weight {
+      font-weight: 800;
+      font-size: 1rem;
+      font-variant-numeric: tabular-nums;
+      min-width: 2.5ch;
+      text-align: right;
+      transition: color 0.4s;
+    }
+    #total-weight.w-critical { color: var(--red); }
+    #total-weight.w-presence { color: var(--yellow); }
+    #total-weight.w-env      { color: var(--green); }
+
+    @keyframes weightPulse {
+      0%   { transform: scale(1); }
+      40%  { transform: scale(1.35); }
+      100% { transform: scale(1); }
+    }
+    #total-weight.pulse { animation: weightPulse 0.3s ease; }
+
+    .w-badge {
+      font-size: 0.58rem;
+      font-weight: 700;
+      padding: 1px 4px;
+      border-radius: 3px;
+      flex-shrink: 0;
+      min-width: 22px;
+      text-align: center;
+      opacity: 0.28;
+      transition: opacity 0.3s;
+    }
+    .w-badge.contributing { opacity: 1; }
+    .w-badge.w-critical { color: var(--red);      background: color-mix(in srgb, transparent 82%, var(--red)); }
+    .w-badge.w-presence { color: var(--yellow);   background: color-mix(in srgb, transparent 82%, var(--yellow)); }
+    .w-badge.w-env      { color: var(--text-muted); background: var(--surface2); border: 1px solid var(--border); }
 
     #search {
       background: var(--surface2);
@@ -328,6 +385,10 @@
   <h1>HA Device Monitor</h1>
   <input id="search" type="text" placeholder="Hledat zařízení nebo entitu..." autocomplete="off">
   <span id="entity-count"></span>
+  <div id="weight-indicator" title="Celková váha aktivity W&#10;Kritické senzory: 100 · Přítomnost/interakce: 10 · Prostředí: 1">
+    <span class="weight-label">W</span>
+    <span id="total-weight" class="w-env">0</span>
+  </div>
 </header>
 
 <div id="domain-filter">
@@ -372,6 +433,39 @@
   let searchTerm = '';
   let logOpen = false;
   let unreadCount = 0;
+  let currentTotalWeight = 0;
+
+  // ── Weight helpers ────────────────────────────────────────────────────────
+  function weightClass(w) {
+    return w >= 100 ? 'w-critical' : w >= 10 ? 'w-presence' : 'w-env';
+  }
+
+  function isEntityActive(domain, stateRaw) {
+    if (stateRaw === 'unavailable' || stateRaw === 'unknown') return false;
+    if (['binary_sensor','switch','light','input_boolean','fan','automation','script'].includes(domain))
+      return stateRaw === 'on';
+    if (domain === 'cover') return ['open','opening','closing'].includes(stateRaw);
+    if (domain === 'media_player') return !['off','idle','standby'].includes(stateRaw);
+    if (domain === 'alarm_control_panel') return stateRaw !== 'disarmed';
+    if (domain === 'lock') return stateRaw === 'unlocked';
+    if (domain === 'sensor') return !isNaN(parseFloat(stateRaw));
+    return !['off','closed','idle','disarmed'].includes(stateRaw);
+  }
+
+  function updateWeightDisplay(weight) {
+    const el = document.getElementById('total-weight');
+    const ind = document.getElementById('weight-indicator');
+    const changed = weight !== currentTotalWeight;
+    currentTotalWeight = weight;
+    el.textContent = weight;
+    const cls = weightClass(weight);
+    el.className = cls;
+    ind.className = weight >= 100 ? 'w-critical' : weight >= 10 ? 'w-presence' : '';
+    if (changed) {
+      el.classList.add('pulse');
+      el.addEventListener('animationend', () => el.classList.remove('pulse'), { once: true });
+    }
+  }
 
   // ── Domain color map ──────────────────────────────────────────────────────
   const domainColors = {
@@ -423,8 +517,12 @@
     row.dataset.entityId = entityId;
     row.dataset.domain = d.domain;
     const color = domainColor(d.domain);
+    const w = d.weight || 1;
+    const wCls = weightClass(w);
+    const contributing = isEntityActive(d.domain, d.state_raw);
     row.innerHTML = `
       <span class="domain-badge" style="background:color-mix(in srgb,var(--surface2) 50%,${color} 20%);color:${color}">${d.domain}</span>
+      <span class="w-badge ${wCls}${contributing ? ' contributing' : ''}" title="Statická váha: ${w}">${w}</span>
       <span class="entity-name-col" title="${entityId}">${d.friendly_name}</span>
       <div class="entity-state-col" id="state-${safeId(entityId)}">${renderRowState(d)}</div>
     `;
@@ -554,9 +652,13 @@
 
     stateEl.innerHTML = renderRowState(data);
 
-    if (flash) {
-      const row = stateEl.closest('.entity-row');
-      if (row) {
+    const row = stateEl.closest('.entity-row');
+    if (row) {
+      const wBadge = row.querySelector('.w-badge');
+      if (wBadge) {
+        wBadge.classList.toggle('contributing', isEntityActive(data.domain, data.state_raw));
+      }
+      if (flash) {
         row.classList.remove('updated');
         void row.offsetWidth;
         row.classList.add('updated');
@@ -617,6 +719,7 @@
         for (const [eid, data] of Object.entries(msg.states)) {
           updateEntityRow(eid, data, false);
         }
+        updateWeightDisplay(msg.total_weight || 0);
       } else if (msg.type === 'state_changed') {
         updateEntityRow(msg.entity_id, msg.data);
         addLogEntry({
@@ -625,6 +728,7 @@
           old_state: msg.old_state,
           new_state: msg.data.state_raw,
         });
+        if (msg.total_weight !== undefined) updateWeightDisplay(msg.total_weight);
       }
     };
   }
@@ -632,6 +736,15 @@
   // ── Init ──────────────────────────────────────────────────────────────────
   buildDomainFilters();
   renderGrid();
+
+  // Initial weight from template data (before WebSocket connects)
+  {
+    let w = 0;
+    for (const d of Object.values(states)) {
+      if (isEntityActive(d.domain, d.state_raw)) w += (d.weight || 1);
+    }
+    updateWeightDisplay(w);
+  }
 
   document.getElementById('search').addEventListener('input', e => {
     searchTerm = e.target.value;
