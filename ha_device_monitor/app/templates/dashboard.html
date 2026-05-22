@@ -243,6 +243,59 @@
     .w-badge.w-presence { color: var(--yellow);   background: color-mix(in srgb, transparent 82%, var(--yellow)); }
     .w-badge.w-env      { color: var(--text-muted); background: var(--surface2); border: 1px solid var(--border); }
 
+    /* ── M-delta bar (sensor entities) ── */
+    .m-bar {
+      width: 38px;
+      height: 4px;
+      border-radius: 2px;
+      flex-shrink: 0;
+      background: linear-gradient(
+        to right,
+        var(--mc, var(--green)) calc(var(--m, 0) * 100%),
+        var(--border) 0%
+      );
+      transition: background 0.5s ease;
+    }
+
+    /* ── Score indicator ── */
+    #score-indicator {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 14px;
+      border-radius: 20px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      user-select: none;
+      transition: border-color 0.4s;
+    }
+    #score-indicator.w-critical { border-color: var(--red); }
+    #score-indicator.w-presence { border-color: var(--yellow); }
+    .score-label {
+      color: var(--text-muted);
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    #total-score {
+      font-weight: 800;
+      font-size: 1rem;
+      font-variant-numeric: tabular-nums;
+      min-width: 3ch;
+      text-align: right;
+      transition: color 0.4s;
+    }
+    #total-score.w-critical { color: var(--red); }
+    #total-score.w-presence { color: var(--yellow); }
+    #total-score.w-env      { color: var(--green); }
+    @keyframes scorePulse {
+      0%   { transform: scale(1); }
+      40%  { transform: scale(1.3); }
+      100% { transform: scale(1); }
+    }
+    #total-score.pulse { animation: scorePulse 0.3s ease; }
+
     #search {
       background: var(--surface2);
       border: 1px solid var(--border);
@@ -518,6 +571,10 @@
     <span id="total-weight" class="w-env">0</span>
     <span id="weight-chevron">▼</span>
   </div>
+  <div id="score-indicator" title="Celkové skóre = Σ(W × M_delta)&#10;M_delta je normalizovaná změna za posledních 5 minut">
+    <span class="score-label">Σ W·M</span>
+    <span id="total-score" class="w-env">0</span>
+  </div>
 </header>
 
 <div id="weight-panel">
@@ -635,6 +692,23 @@
     renderWeightPanel();
   }
 
+  function mDeltaColor(m) {
+    return m >= 0.7 ? 'var(--red)' : m >= 0.3 ? 'var(--yellow)' : 'var(--green)';
+  }
+
+  function updateScoreDisplay(score) {
+    const el = document.getElementById('total-score');
+    const ind = document.getElementById('score-indicator');
+    const prev = parseFloat(el.textContent) || 0;
+    el.textContent = score.toFixed(1);
+    el.className = weightClass(score);
+    ind.className = score >= 100 ? 'w-critical' : score >= 10 ? 'w-presence' : '';
+    if (Math.abs(score - prev) > 0.05) {
+      el.classList.add('pulse');
+      el.addEventListener('animationend', () => el.classList.remove('pulse'), { once: true });
+    }
+  }
+
   function toggleWeightPanel() {
     weightPanelOpen = !weightPanelOpen;
     const panel = document.getElementById('weight-panel');
@@ -671,7 +745,6 @@
 
     document.getElementById('critical-subtotal').textContent = `∑ ${critSubtotal}`;
     document.getElementById('presence-subtotal').textContent = `∑ ${presSubtotal}`;
-    document.getElementById('env-subtotal').textContent = `∑ ${envActive}`;
 
     // Critical: show all, active highlighted, inactive dimmed
     const critList = document.getElementById('critical-list');
@@ -701,14 +774,48 @@
         (more > 0 ? `<div class="weight-more">+ ${more} dalších aktivních</div>` : '');
     }
 
-    // Environmental: progress bar + count
+    // Environmental: collect sensors with m_delta, show top movers
+    const envSensors = [];
+    for (const [, d] of Object.entries(states)) {
+      if ((d.weight || 1) < 10 && d.domain === 'sensor') {
+        const m = d.m_delta ?? 0;
+        envTotal++;
+        if (m > 0) {
+          envActive++;
+          envSensors.push({ name: d.friendly_name, m, val: d.display?.value, unit: d.display?.unit || '' });
+        }
+      }
+    }
+    envSensors.sort((a, b) => b.m - a.m);
+
+    const envScore = envSensors.reduce((s, e) => s + e.m, 0);
+    document.getElementById('env-subtotal').textContent = `∑ ${envScore.toFixed(2)}`;
+
     const pct = envTotal > 0 ? Math.round(envActive / envTotal * 100) : 0;
+    const MAX_ENV = 8;
+    const topEnv = envSensors.slice(0, MAX_ENV);
+    const moreEnv = envSensors.length - MAX_ENV;
+    const topHtml = topEnv.map(e => {
+      const mc = mDeltaColor(e.m);
+      const barW = Math.round(e.m * 100);
+      return `
+        <div class="weight-entity-item" style="gap:6px">
+          <span style="
+            display:inline-block;width:38px;height:4px;border-radius:2px;flex-shrink:0;
+            background:linear-gradient(to right,${mc} ${barW}%,var(--border) 0%);
+          " title="M=${e.m.toFixed(3)}"></span>
+          <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${e.name}</span>
+          <span style="color:var(--text-muted);font-size:0.75rem;flex-shrink:0">${e.val} ${e.unit}</span>
+        </div>`;
+    }).join('');
     document.getElementById('env-list').innerHTML = `
-      <div class="weight-env-bar"><div class="weight-env-fill" style="width:${pct}%"></div></div>
-      <div class="weight-env-counts">
-        <strong>${envActive}</strong> aktivních z <span>${envTotal}</span> celkem
+      <div class="weight-env-bar" style="margin-bottom:8px"><div class="weight-env-fill" style="width:${pct}%"></div></div>
+      <div class="weight-env-counts" style="margin-bottom:8px">
+        <strong>${envActive}</strong> mění se z <span>${envTotal}</span> celkem
         <span style="color:var(--text-muted);font-size:0.75rem"> (${pct} %)</span>
-      </div>`;
+      </div>
+      ${topHtml}
+      ${moreEnv > 0 ? `<div class="weight-more">+ ${moreEnv} dalších</div>` : ''}`;
   }
 
   // ── Domain color map ──────────────────────────────────────────────────────
@@ -764,9 +871,14 @@
     const w = d.weight || 1;
     const wCls = weightClass(w);
     const contributing = isEntityActive(d.domain, d.state_raw);
+    const m = d.m_delta ?? 0;
+    const mBarHtml = d.domain === 'sensor'
+      ? `<span class="m-bar" style="--m:${m};--mc:${mDeltaColor(m)}" title="M delta: ${m.toFixed(3)}"></span>`
+      : '';
     row.innerHTML = `
       <span class="domain-badge" style="background:color-mix(in srgb,var(--surface2) 50%,${color} 20%);color:${color}">${d.domain}</span>
       <span class="w-badge ${wCls}${contributing ? ' contributing' : ''}" title="Statická váha: ${w}">${w}</span>
+      ${mBarHtml}
       <span class="entity-name-col" title="${entityId}">${d.friendly_name}</span>
       <div class="entity-state-col" id="state-${safeId(entityId)}">${renderRowState(d)}</div>
     `;
@@ -902,6 +1014,13 @@
       if (wBadge) {
         wBadge.classList.toggle('contributing', isEntityActive(data.domain, data.state_raw));
       }
+      const mBar = row.querySelector('.m-bar');
+      if (mBar && data.m_delta !== undefined) {
+        const m = data.m_delta;
+        mBar.style.setProperty('--m', m);
+        mBar.style.setProperty('--mc', mDeltaColor(m));
+        mBar.title = `M delta: ${m.toFixed(3)}`;
+      }
       if (flash) {
         row.classList.remove('updated');
         void row.offsetWidth;
@@ -964,6 +1083,7 @@
           updateEntityRow(eid, data, false);
         }
         updateWeightDisplay(msg.total_weight || 0);
+        updateScoreDisplay(msg.total_score || 0);
       } else if (msg.type === 'state_changed') {
         updateEntityRow(msg.entity_id, msg.data);
         addLogEntry({
@@ -973,6 +1093,7 @@
           new_state: msg.data.state_raw,
         });
         if (msg.total_weight !== undefined) updateWeightDisplay(msg.total_weight);
+        if (msg.total_score !== undefined) updateScoreDisplay(msg.total_score);
       }
     };
   }
@@ -981,13 +1102,17 @@
   buildDomainFilters();
   renderGrid();
 
-  // Initial weight from template data (before WebSocket connects)
+  // Initial W and Score from template data (before WebSocket connects)
   {
-    let w = 0;
+    let w = 0, s = 0;
     for (const d of Object.values(states)) {
-      if (isEntityActive(d.domain, d.state_raw)) w += (d.weight || 1);
+      const m = d.m_delta ?? 0;
+      const wt = d.weight || 1;
+      if (isEntityActive(d.domain, d.state_raw)) w += wt;
+      s += wt * m;
     }
     updateWeightDisplay(w);
+    updateScoreDisplay(s);
   }
 
   document.getElementById('search').addEventListener('input', e => {

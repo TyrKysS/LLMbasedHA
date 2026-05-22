@@ -3,6 +3,8 @@ import json
 import logging
 import os
 import sys
+import time
+from collections import deque
 from datetime import datetime, timezone
 
 import aiohttp
@@ -37,7 +39,33 @@ PRESENCE_DOMAINS = frozenset({
     "button", "remote", "alarm_control_panel", "person", "lock",
 })
 
+# ── Dynamic amplitude (M_delta) ───────────────────────────────────────────────
+HISTORY_WINDOW = 300  # seconds (5 minutes)
+
+# Max expected change over 5 min per device_class — maps to M_delta = 1.0
+DELTA_THRESHOLDS: dict[str, float] = {
+    "temperature": 5.0,
+    "humidity": 10.0,
+    "illuminance": 500.0,
+    "power": 500.0,
+    "energy": 1.0,
+    "voltage": 20.0,
+    "current": 5.0,
+    "pressure": 5.0,
+    "co2": 200.0,
+    "carbon_dioxide": 200.0,
+    "pm25": 50.0,
+    "pm10": 100.0,
+    "volatile_organic_compounds": 500.0,
+    "nitrogen_dioxide": 100.0,
+}
+DEFAULT_DELTA_THRESHOLD = 10.0
+
+# entity_id → circular buffer of (monotonic_ts, numeric_value)
+sensor_history: dict[str, deque] = {}
+
 total_weight: int = 0
+total_score: float = 0.0
 
 
 def get_entity_weight(entity_id: str, attributes: dict) -> int:
@@ -77,6 +105,58 @@ def calculate_total_weight() -> int:
         for data in states_cache.values()
         if is_entity_active(data["domain"], data["state_raw"])
     )
+
+
+def get_numeric_value(state: str) -> float | None:
+    try:
+        return float(state)
+    except (ValueError, TypeError):
+        return None
+
+
+def push_sensor_history(entity_id: str, value: float) -> None:
+    if entity_id not in sensor_history:
+        sensor_history[entity_id] = deque(maxlen=600)
+    hist = sensor_history[entity_id]
+    now = time.monotonic()
+    hist.append((now, value))
+    cutoff = now - HISTORY_WINDOW
+    while hist and hist[0][0] < cutoff:
+        hist.popleft()
+
+
+def compute_m_delta(entity_id: str, device_class: str) -> float:
+    hist = sensor_history.get(entity_id)
+    if not hist or len(hist) < 2:
+        return 0.0
+    cutoff = time.monotonic() - HISTORY_WINDOW
+    oldest_val = next((v for ts, v in hist if ts >= cutoff), None)
+    if oldest_val is None:
+        return 0.0
+    delta = abs(hist[-1][1] - oldest_val)
+    threshold = DELTA_THRESHOLDS.get(device_class, DEFAULT_DELTA_THRESHOLD)
+    return round(min(1.0, delta / threshold), 4)
+
+
+def set_m_delta(entity_id: str, classified: dict, attributes: dict) -> None:
+    domain = classified["domain"]
+    state = classified["state_raw"]
+    if domain == "sensor":
+        val = get_numeric_value(state)
+        if val is not None:
+            push_sensor_history(entity_id, val)
+            classified["m_delta"] = compute_m_delta(entity_id, attributes.get("device_class", ""))
+        else:
+            classified["m_delta"] = 0.0
+    else:
+        classified["m_delta"] = 1.0 if is_entity_active(domain, state) else 0.0
+
+
+def calculate_total_score() -> float:
+    return round(sum(
+        data["weight"] * data.get("m_delta", 0.0)
+        for data in states_cache.values()
+    ), 2)
 
 
 def classify_entity(entity_id: str, state: str, attributes: dict) -> dict:
@@ -238,10 +318,12 @@ async def listen_ha_events(app: web.Application) -> None:
                         logger.info("STATE_CHANGE %s", json.dumps(change_log, ensure_ascii=False))
 
                         classified = classify_entity(entity_id, new_state, attributes)
+                        set_m_delta(entity_id, classified, attributes)
                         states_cache[entity_id] = classified
 
-                        global total_weight
+                        global total_weight, total_score
                         total_weight = calculate_total_weight()
+                        total_score = calculate_total_score()
 
                         await broadcast({
                             "type": "state_changed",
@@ -249,6 +331,7 @@ async def listen_ha_events(app: web.Application) -> None:
                             "data": classified,
                             "old_state": old_state,
                             "total_weight": total_weight,
+                            "total_score": total_score,
                         })
 
         except Exception as exc:
@@ -284,7 +367,7 @@ async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
     await ws.prepare(request)
     ws_clients.add(ws)
     try:
-        await ws.send_json({"type": "init", "states": states_cache, "total_weight": total_weight})
+        await ws.send_json({"type": "init", "states": states_cache, "total_weight": total_weight, "total_score": total_score})
         async for _ in ws:
             pass
     finally:
@@ -302,10 +385,16 @@ async def on_startup(app: web.Application) -> None:
                 eid = entity["entity_id"]
                 state = entity["state"]
                 attrs = entity.get("attributes", {})
-                states_cache[eid] = classify_entity(eid, state, attrs)
-            global total_weight
+                classified = classify_entity(eid, state, attrs)
+                set_m_delta(eid, classified, attrs)
+                states_cache[eid] = classified
+            global total_weight, total_score
             total_weight = calculate_total_weight()
-            logger.info("Načteno %d entit z Home Assistant, počáteční váha aktivity: %d", len(states_cache), total_weight)
+            total_score = calculate_total_score()
+            logger.info(
+                "Načteno %d entit z HA, W=%d, Score=%.2f",
+                len(states_cache), total_weight, total_score,
+            )
         except Exception as exc:
             logger.error("Chyba při načítání stavů: %s", exc)
 
