@@ -66,6 +66,7 @@ sensor_history: dict[str, deque] = {}
 
 total_weight: int = 0
 total_score: float = 0.0
+entity_active_until: dict[str, float] = {}  # entity_id → monotonic expiry time
 
 
 def get_entity_weight(entity_id: str, attributes: dict) -> int:
@@ -100,10 +101,11 @@ def is_entity_active(domain: str, state: str) -> bool:
 
 
 def calculate_total_weight() -> int:
+    now = time.monotonic()
     return sum(
         data["weight"]
-        for data in states_cache.values()
-        if is_entity_active(data["domain"], data["state_raw"])
+        for eid, data in states_cache.items()
+        if now < entity_active_until.get(eid, 0)
     )
 
 
@@ -138,9 +140,18 @@ def compute_m_delta(entity_id: str, device_class: str) -> float:
     return round(min(1.0, delta / threshold), 4)
 
 
-def set_m_delta(entity_id: str, classified: dict, attributes: dict) -> None:
+def set_m_delta(entity_id: str, classified: dict, attributes: dict, *, on_state_change: bool = False) -> None:
     domain = classified["domain"]
     state = classified["state_raw"]
+
+    if on_state_change:
+        entity_active_until[entity_id] = time.monotonic() + HISTORY_WINDOW
+
+    if time.monotonic() >= entity_active_until.get(entity_id, 0):
+        classified["m_delta"] = 0.0
+        return
+
+    # Entity is within its 5-minute activity window
     if domain == "sensor":
         val = get_numeric_value(state)
         if val is not None:
@@ -149,7 +160,28 @@ def set_m_delta(entity_id: str, classified: dict, attributes: dict) -> None:
         else:
             classified["m_delta"] = 0.0
     else:
-        classified["m_delta"] = 1.0 if is_entity_active(domain, state) else 0.0
+        classified["m_delta"] = 1.0
+
+
+async def expire_inactive_entities(_app: web.Application) -> None:
+    while True:
+        await asyncio.sleep(30)
+        now = time.monotonic()
+        expired = [eid for eid, exp in list(entity_active_until.items()) if now >= exp]
+        if not expired:
+            continue
+        changed = False
+        for eid in expired:
+            entity_active_until.pop(eid, None)
+            if eid in states_cache and states_cache[eid].get("m_delta", 0.0) != 0.0:
+                states_cache[eid]["m_delta"] = 0.0
+                changed = True
+        if changed:
+            global total_weight, total_score
+            total_weight = calculate_total_weight()
+            total_score = calculate_total_score()
+            await broadcast({"type": "scores_updated", "total_weight": total_weight, "total_score": total_score})
+            logger.info("Expirováno %d entit, W=%d, Score=%.2f", len(expired), total_weight, total_score)
 
 
 def calculate_total_score() -> float:
@@ -318,7 +350,7 @@ async def listen_ha_events(app: web.Application) -> None:
                         logger.info("STATE_CHANGE %s", json.dumps(change_log, ensure_ascii=False))
 
                         classified = classify_entity(entity_id, new_state, attributes)
-                        set_m_delta(entity_id, classified, attributes)
+                        set_m_delta(entity_id, classified, attributes, on_state_change=True)
                         states_cache[entity_id] = classified
 
                         global total_weight, total_score
@@ -399,6 +431,7 @@ async def on_startup(app: web.Application) -> None:
             logger.error("Chyba při načítání stavů: %s", exc)
 
     asyncio.create_task(listen_ha_events(app))
+    asyncio.create_task(expire_inactive_entities(app))
 
 
 def build_app() -> web.Application:

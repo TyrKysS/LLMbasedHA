@@ -725,7 +725,7 @@
     let envActive = 0, envTotal = 0;
 
     for (const [, d] of Object.entries(states)) {
-      const active = isEntityActive(d.domain, d.state_raw);
+      const active = (d.m_delta ?? 0) > 0;
       const w = d.weight || 1;
       if (w >= 100) {
         critical.push({ name: d.friendly_name, active });
@@ -870,8 +870,8 @@
     const color = domainColor(d.domain);
     const w = d.weight || 1;
     const wCls = weightClass(w);
-    const contributing = isEntityActive(d.domain, d.state_raw);
     const m = d.m_delta ?? 0;
+    const contributing = m > 0;
     const mBarHtml = d.domain === 'sensor'
       ? `<span class="m-bar" style="--m:${m};--mc:${mDeltaColor(m)}" title="M delta: ${m.toFixed(3)}"></span>`
       : '';
@@ -1012,7 +1012,7 @@
     if (row) {
       const wBadge = row.querySelector('.w-badge');
       if (wBadge) {
-        wBadge.classList.toggle('contributing', isEntityActive(data.domain, data.state_raw));
+        wBadge.classList.toggle('contributing', (data.m_delta ?? 0) > 0);
       }
       const mBar = row.querySelector('.m-bar');
       if (mBar && data.m_delta !== undefined) {
@@ -1094,6 +1094,23 @@
         });
         if (msg.total_weight !== undefined) updateWeightDisplay(msg.total_weight);
         if (msg.total_score !== undefined) updateScoreDisplay(msg.total_score);
+      } else if (msg.type === 'scores_updated') {
+        // Fired by the server when activity windows expire
+        if (msg.total_weight !== undefined) updateWeightDisplay(msg.total_weight);
+        if (msg.total_score !== undefined) updateScoreDisplay(msg.total_score);
+        renderWeightPanel();
+        // Dim all W-badges whose entity m_delta is now 0
+        document.querySelectorAll('.entity-row').forEach(row => {
+          const eid = row.dataset.entityId;
+          const d = states[eid];
+          if (!d) return;
+          row.querySelector('.w-badge')?.classList.toggle('contributing', (d.m_delta ?? 0) > 0);
+          const mBar = row.querySelector('.m-bar');
+          if (mBar) {
+            mBar.style.setProperty('--m', d.m_delta ?? 0);
+            mBar.style.setProperty('--mc', mDeltaColor(d.m_delta ?? 0));
+          }
+        });
       }
     };
   }
@@ -1102,13 +1119,13 @@
   buildDomainFilters();
   renderGrid();
 
-  // Initial W and Score from template data (before WebSocket connects)
+  // Initial W and Score from template data — all start at 0 until first state change
   {
     let w = 0, s = 0;
     for (const d of Object.values(states)) {
       const m = d.m_delta ?? 0;
       const wt = d.weight || 1;
-      if (isEntityActive(d.domain, d.state_raw)) w += wt;
+      if (m > 0) w += wt;
       s += wt * m;
     }
     updateWeightDisplay(w);
